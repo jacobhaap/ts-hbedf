@@ -1,0 +1,16 @@
+{
+    "name": "@iacobus/hbedf",
+    "version": "1.0.0",
+    "license": "MIT",
+    "exports": "./src/mod.ts",
+    "compilerOptions": {
+      "strict": true,
+      "lib": ["deno.ns", "deno.window", "esnext"]
+    },
+    "test": {
+        "include": ["tests/mod.test.ts"]
+    },
+    "imports": {
+        "@deno/dnt": "jsr:@deno/dnt@^0.41.3"
+    }
+}
