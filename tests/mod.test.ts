@@ -1,11 +1,18 @@
-import { hbedf, hmacRng, fyShuffle, checksum, verify } from "../src/mod.ts";
-import { Buffer } from "node:buffer";
+/**
+ * @fileoverview Test script for the exports of the @iacobus/hbedf entry point.
+ * @author Jacob V. B. Haap <iacobus.xyz>
+ * @license MIT
+ */
 
-// 6-Digit PIN as Passphrase
-const passphrase = "123456";
+import { sha256 } from "npm:@noble/hashes@1.7.1/sha2";
+import { toHex } from "../src/utils/hex.ts";
+import { type SeedOpts, hbedf } from "../src/mod.ts";
+
+// 6-Digit PIN
+const pin = "123456";
 
 // Identity Array
-const identity = [
+const idArray = [
     "L01X00T47",        // Document Number
     "MUSTERMANN",       // Name
     "ERIKA",            // Given Name
@@ -17,39 +24,36 @@ const identity = [
     "HEIDESTRASSE17"    // Address
 ];
 
-// SHA-256 Hash of Secret
-const secret = "1e7f7c26deaad3aea0d7aa5cf450efdd314ab4889595ed1844b4da23a855ee7c";
+// SHA256 Hash
+const hash = sha256("In the age of anxiety");
 
-let checksumStr: string;
+/**
+ * Test for 'hbedf' function.
+ * 
+ * Uses a 'passphrase' from 'pin', an 'identity' from 'idArray', a 'secret' from 'hash', and
+ * specifies the SeedOpts in 'opts' to derive two seeds. In the first invocation of 'hbedf',
+ * a seed is derived from a passphrase & identity and assigned to 'seed1'. In the second
+ * invocation of 'hbedf', a seed is derived from a passphrase, identity, and secret, and
+ * assigned to 'seed1'.
+ * 
+ * The first console.assert checks that 'seed1' is not null and is a 'Uint8Array'.
+ * The second console.assert checks that 'seed2' is not null and is a 'Uint8Array'.
+ */
+Deno.test(`Function 'hbedf' derives a pseudorandom seed`, async () => {
+    const passphrase = pin; // Use 'pin' as the 'passphrase'
+    const identity = idArray; // Use 'idArray' as the 'identity'
+    const secret = toHex(hash); // Use 'hash' as the 'secret'
+    const opts: SeedOpts = {
+        a: "blake2b", // Use 'a' hashing algorithm 'blake2b'
+        dkLen: 48, // Use a 'dkLen' of '48' bytes for the output transformation
+        N: 2 ** 8, r: 8, p: 1 // Options for scrypt key derivation
+    };
+    
+    // Derive 'seed1' from a passphrase and identity
+    const seed1 = await hbedf(passphrase, identity, null, opts);
+    console.assert(!!seed1 && seed1 instanceof Uint8Array, `Function 'hbedf' should derive a pseudorandom seed`);
 
-Deno.test(`'hbedf' derives a pseudorandom seed from a Passphrase, Identity, and Secret`, () => {
-    const seed = hbedf(passphrase, false, identity, secret);
-    console.assert(!!seed, `'hbedf' should derive a pseudorandom seed from a Passphrase, Identity, and Secret`);
-});
-
-Deno.test(`'hbedf' derives a pseudorandom seed from a Passphrase and Identity`, () => {
-    const seed = hbedf(passphrase, false, identity, null);
-    console.assert(!!seed, `'hbedf' should derive a pseudorandom seed from a Passphrase and Identity`);
-});
-
-Deno.test(`'hmacRng' produces a seeded pseudorandom number from an HMAC-SHA256`, () => {
-    const key = Buffer.from(secret);
-    const rng = hmacRng(key, secret, null);
-    console.assert(!!rng && typeof rng === 'number', `'hmacRng' should produce a pseudorandom number from an HMAC`);
-});
-
-Deno.test(`'fyShuffle' shuffles an array using the Fisher-Yates Shuffle Algorithm, with rekeying`, () => {
-    const shuffle = fyShuffle(passphrase, true, identity);
-    console.assert(!!shuffle && typeof shuffle === 'string', `'fyShuffle' should shuffle an array, with rekeying`);
-});
-
-Deno.test(`'checksum' calculates a 32-bit decimal checksum for a string`, () => {
-    const csum = checksum(secret).toString('utf8');
-    checksumStr = secret + csum;
-    console.assert(!!csum && typeof csum === 'string', `'checksum' should calculate a checksum for a string`);
-});
-
-Deno.test(`'verify' verifies a checksum to establish integrity`, () => {
-    const verification = verify(checksumStr);
-    console.assert(verification === true, `'verify' should verify a valid checksum`);
+    // Derive 'seed2' from a passphrase, identity, and secret
+    const seed2 = await hbedf(passphrase, identity, secret, opts);
+    console.assert(!!seed2 && seed2 instanceof Uint8Array, `Function 'hbedf' should derive a pseudorandom seed`);
 });

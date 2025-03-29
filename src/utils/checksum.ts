@@ -1,29 +1,35 @@
-import { createHash } from "node:crypto";
-import { Buffer } from "node:buffer";
+/**
+ * @fileoverview Provides functions for checksum calculation and verification.
+ * @author Jacob V. B. Haap <iacobus.xyz>
+ * @license MIT
+ */
+
+import { blake2s } from "npm:@noble/hashes@1.7.1/blake2s";
 
 /**
- * Calculate a 32-bit decimal checksum.
- * Takes a `sha256` hash of a string, and extracts the first **8** characters from
- * the *hexadecimal* digest of the hash. The extracted characters are then converted
- * to a *decimal* value. Padding is applied to ensure a fixed-length output of **10**
- * digits. The resulting decimal checksum is returned as a *Buffer*.
+ * Calculates a checksum by taking a {@link blake2s} hash of a message (`msg`) at a length of **16** bytes.
+ * @example
+ * const hexStr: string = "940d878d35ba771332fe98efd3bd51a2";
+ * const msg: Uint8Array = toBytes(hexStr);
+ * const csum = toHex(checksum(msg)); // 93bb7cdab5363686efa39a2f10566c70
  */
-export function calculateChecksum(str: string,): Buffer {
-    const hash = createHash('sha256')
-        .update(str)
-        .digest('hex');
-    return Buffer.from(parseInt(hash.substring(0, 8), 16).toString().padStart(10, '0'));
+export function checksum(msg: Uint8Array): Uint8Array {
+    const csum = blake2s(msg, { dkLen: 16 }); // Take a 'blake2s' hash of 'msg' with a dkLen of 16
+    return csum;
 }
 
 /**
- * Verify a 32-bit decimal checksum.
- * Takes a `utf8` *string*, and separates the final 10 characters of the string to
- * isolate the checksum. The {@link calculateChecksum} function is called for the remainder
- * of the string to recalculate the checksum, which is then compared with the extracted
- * checksum, returning *true* if the checksums match, and *false* if they do not.
+ * Verifies a checksum by extracting the final 16 bytes of a message (`msg`), calculates a new
+ * checksum for the remainder, and compares the checksums for a match.
+ * @example
+ * const hexStr: string = "940d878d35ba771332fe98efd3bd51a293bb7cdab5363686efa39a2f10566c70";
+ * const msg: Uint8Array = toBytes(hexStr);
+ * const verified = verify(msg); // true
  */
-export function verifyChecksum(str: string): boolean {
-    const data = str.slice(0, -10);
-    const checksum = str.slice(-10);
-    return calculateChecksum(data).toString('utf8') === checksum;
+export function verify(msg: Uint8Array): boolean {
+    if (msg.length < 16) throw new Error(`Array must be at least 16 bytes in length.`);
+    const data = msg.subarray(0, msg.length - 16); // Extract all but the last 16 bytes as 'data'
+    const csum1 = msg.subarray(msg.length - 16); // Extract the final 16 bytes as the checksum 'csum1'
+    const csum2 = checksum(data); // Calculate a new checksum for 'data'
+    return csum2.every((byte, i) => byte === csum1[i]); // Compare all bytes of 'csum1' and 'csum2'
 }

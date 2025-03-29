@@ -3,7 +3,7 @@ import { build, emptyDir } from "jsr:@deno/dnt@0.41.3";
 await emptyDir("./npm");
 
 await build({
-  entryPoints: ["./src/mod.ts"],
+  entryPoints: ["./src/mod.ts", { name: "./utils", path: "./src/utils/mod.ts" }],
   outDir: "./npm",
   shims: {
     deno: true,
@@ -31,7 +31,7 @@ await build({
         "entropy",
         "deterministic",
         "pseudorandom"
-    ]
+    ],
   },
   postBuild() {
     // steps to run after building and before running the tests
