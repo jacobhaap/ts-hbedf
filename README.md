@@ -10,7 +10,7 @@ deno add jsr:@iacobus/hbedf
 npm install @iacobus/hbedf
 ```
 
-# Usage
+# HBEDF
 TypeScript/ESM import:
 ```ts
 import { hbedf } from "@iacobus/hbedf";
@@ -20,143 +20,221 @@ CommonJS require:
 ```js
 const { hbedf } = require("@iacobus/hbedf");
 ```
-For demonstration purposes, functions and their parameters with types will be displayed in TypeScript, and the example use of the library will be displayed in ESM.
+A pseudorandom seed can be derived from Human Identity & Secrets using the `hbedf` function. This derives the seed from a provided **Passphrase**, **Identity** array, and optional **Secret**, based on the process described in the [*"Deriving a Seed"*](https://gist.github.com/jacobhaap/e8305533628be06fc09754d41a17ee5b#deriving-a-seed) section of the specification.
 
-## hbedf
-A pseudorandom seed can be derived from Human Identity & Secrets using the `hbedf` function. This derives the seed from a provided **Passphrase**, **Identity** array, and optional **Secret**, based on the process described in the [*"From Identity to Seed"*](https://gist.github.com/jacobhaap/e8305533628be06fc09754d41a17ee5b#from-identity-to-seed) section of the HBEDF specification.
-```ts
-hbedf(passphrase: string, rekeying: boolean, identity: string[], secret: string | null): Buffer {};
-```
-This requires a `passphrase`, `identity`, and optional `secret` parameter, corresponding to their namesakes. The `rekeying` parameter is used to enable to disable rekeying as described in the [*"Fisher-Yates Shuffle Algorithm"*](https://gist.github.com/jacobhaap/e8305533628be06fc09754d41a17ee5b#fisher-yates-shuffle-algorithm) section of the specification, enabling when *true* and disabling when *false*. The `hbedf` function returns the pseudorandom seed as a **Buffer**.
+The *HBEDF* function has four input parameters:
 ```js
-import { hbedf } from "@iacobus/hbedf";
-
-// 6-Digit PIN as Passphrase
-const passphrase = "123456";
-
-// Identity Array
-const identity = [
-    "L01X00T47",        // Document Number
-    "MUSTERMANN",       // Name
-    "ERIKA",            // Given Name
-    "12081983",         // Date of Birth
-    "DEUTSCH",          // Nationality
-    "BERLIN",           // Birthplace
-    "GREEN",            // Eye Color
-    "160",              // Height
-    "HEIDESTRASSE17"    // Address
-];
-
-// SHA-256 Hash of Secret
-const secret = "1e7f7c26deaad3aea0d7aa5cf450efdd314ab4889595ed1844b4da23a855ee7c";
-
-// Derive seed with 'hbedf'
-const seed = hbedf(passphrase, false, identity, secret).toString('base64');
-console.log(seed);
-
+async function hbedf(passphrase, identity, secret, opts) {};
 ```
+Where:
+ - ***passphrase*** is a passphrase or key (*e.g., password, numerical PIN, cryptographic key*).
+ - ***identity*** is an array of an *Identity*.
+ - ***secret*** is an optional string of a *Secret*.
+ - ***opts*** contains the options for output transformation and key derivation with the *scrypt* KDF.
+	 - ***a*** is the hashing algorithm applied during output transformation (*e.g., blake2b*).
+	 - ***dkLen*** is an optional output length when ***a*** is an *Extendable-output function (XOF)*.
+	 - ***N*** is the *scrypt* work factor to scale memory and CPU usage.[^1]
+	 - ***r*** determines the block size (*BlockMix*).
+	 - ***p*** is for parallelization (*not supported in JavaScript*).
+	 - ***maxmem*** is the memory cap to prevent DoS.
 
-In this example, a seed is derived from a 6-digit PIN, following the recommendation to use a "*4- to 12-digit numerical PIN"* as the Passphrase, along with an Identity array for a sample identity, and a Secret supplied as a SHA-256 hash of the secret. Rekeying has been disabled, and the derived seed is returned as a base64 string from the Buffer.
-```
-YTJiRVJkNjFkNWVFTUxTOGVkNDcwN2FFZVRmMTFYN0FjODVUMmVUODBTVUIyYzE4RUVhNDVJSFI0RDRhQWEwTkExZlI1SWQxZGUwRTU1RThFVDNSYlNEMWNHTWE4M2RlNDlTTjA0Nzc5TjRFTDc5UklhYTBkYVUwQzNINjNmS04xZVMxNjEyNjkyMzI1
-```
+[^1]: The ***N***, ***r***, ***p***, and ***maxmem*** options proxy to the options of the same name required in the [@noble/hashes](https://github.com/paulmillr/noble-hashes?tab=readme-ov-file#scrypt) implementation of the *scrypt* key derivation function.
 
-## HMAC Random Number Generator
-Pseudorandom numbers are generated from an **HMAC-SHA256**, based on the process described in the [*"HMAC Pseudorandom Number Generation"*](https://gist.github.com/jacobhaap/e8305533628be06fc09754d41a17ee5b#hmac-pseudorandom-number-generation) section of the specification. A floating-point number in the range in the range **[0, 1)** derived via seeded random number generation can be obtained with the `hmacRng` function.
+The ***passphrase*** parameter is expected as a *string* or *Uint8Array*, the ***identity*** parameter is expected as an *array (string[])*, the ***secret*** parameter is expected as a *string*, and the ***opts*** parameter is expected as a *SeedOpts* object. The *HBEDF* function is asynchronous, and returns a Promise that resolves to a *Uint8Array*.
+
+*SeedOpts Type[^2]:*
 ```ts
-hmacRng(secret: string | Buffer, data: string, counter: number | null): number {};
-```
-This requires a `secret` parameter, which is either used to derive a cryptographic key with **PBKDF2** when its type is a *string*, or is itself used as a key when its type is a *Buffer*. The `data` and optional `counter` parameters are used as the data to update the HMAC with. The random number is returned as a **number**.
-```js
-import { hmacRng } from "@iacobus/hbedf";
-
-// Sample secret, supplied as a string to derive key
-const secret = "Goodbye Blue Sky";
-
-// Sample data
-const data = "476F6F7365207361797320486F6E6B21";
-
-// Get random number with 'hmacRng'
-const rng = hmacRng(secret, data, null);
-console.log(rng);
-
+type SeedOpts = {
+    a: Algorithm;
+    dkLen?: number;
+    N: number;
+    r: number;
+    p: number;
+    maxmem?: number;
+}
 ```
 
-In this example, a pseudorandom floating-point number is derived from an HMAC using a secret as a string (causing a key to be derived internally) and updated with a hexadecimal string. The returned number is based on the first 12 characters of the hexadecmial digest of the HMAC.
-```
-0.9859458969802724
-```
+[^2]: In the *SeedOpts* type, the ***a*** and ***dkLen*** options are used to configure the output transformation. The *Algorithm* type expected for ***a*** must be the name of a hashing algorithm supported by [@noble/hashes](https://github.com/paulmillr/noble-hashes), specifically from the *sha2*, *sha3*, *sha3-addons*, *ripemd160*, *blake1*, *blake2b*, *blake2s*, and *blake3* exports. The name of the hashing algorithm must be provided as a string. The ***N***, ***r***, ***p***, and ***maxmem*** options proxy to the options of the same name required in the [@noble/hashes](https://github.com/paulmillr/noble-hashes?tab=readme-ov-file#scrypt) implementation of the *scrypt* key derivation function.
 
-## Shuffle Algorithm Implementation
-The implementation of the **Fisher-Yates Shuffle Algorithm**, based on the description provided in the [*"Fisher-Yates Shuffle Algorithm"*](https://gist.github.com/jacobhaap/e8305533628be06fc09754d41a17ee5b#fisher-yates-shuffle-algorithm) section of the specification, shuffles arrays based on random number generation provided by the **HMAC Random Number Generator**, using the `fyShuffle` function.
+*Example use, deriving a seed from a Passphrase and Identity:*
 ```ts
-fyShuffle(secret: string, rekeying: boolean, input: string[]): string {};
-```
-This requires a `secret` parameter, which is the secret used for the random number generation, along with a `rekeying` parameter to enable (*true*) or disable (*false*) the use of rekeying as described in the specification, and an `input` parameter as the array to be shuffled. The shuffled array is returned as an **NFKD**-normalized **string**.
-```js
-import { fyShuffle } from "@iacobus/hbedf";
+import { type SeedOpts, hbedf } from "@iacobus/hbedf";
 
-// Sample secret, supplied as a string to derive key
-const secret = "Black Mirror";
+const passphrase: string = "123456";
+const identity: string[] = ["MUSTERMANN", "ERIKA", "L01X00T47", "12081983"];
+const opts: SeedOpts = { a: "blake2s", N: 2 ** 8, r: 8, p: 1, dkLen: 16 };
 
-// Create an array from a string
-const str = "TheirNamesAreNeverSpoken";
-const input = str.split('');
+const seed = await hbedf(passphrase, identity, null, opts);
 
-// Shuffle with 'fyShuffle'
-const shuffled = fyShuffle(secret, true, input);
-console.log(shuffled);
-
-```
-
-In this example, an array is created from a string, then is shuffled based on the provided `secret`, with `rekeying` enabled. The shuffled array is joined into a string, and returned with NFKD normalization applied.
-```
-enNesoepivrSTerNkrehameA
+/*
+Uint8Array(32) [
+  102, 189, 153, 140,  18,  33, 124,
+  159, 100, 173,  86, 217, 167,  19,
+  172,  38, 222, 158, 231, 192,  44,
+   95,  56,  59, 147, 118, 122,  40,
+  152, 144, 210, 132
+]
+*/
 ```
 
-## Checksum Calculation
-A **32-bit decimal checksum** can be calculated based on the method outlined in the [*"Checksum"*](https://gist.github.com/jacobhaap/e8305533628be06fc09754d41a17ee5b#checksum) section of the specification using the `checksum` function.
+# Utilities
+The HBEDF utility functions are available under the **@iacobus/hbedf/utils** namespace. This includes functionality for conversion between Uint8Arrays and hexadecimal strings, random number generation, array shuffling, checksum calculation and verification, and output transformation. These utility functions may be imported individually, or as part of a `utils` object.
+
+TypeScript/ESM import:
 ```ts
-hbedf.checksum(data:  string  |  Buffer): Buffer {};
+import { utils } from "@iacobus/hbedf/utils";
 ```
-This requires a `data` parameter, which expects the data for which a checksum is being calculated, provided as a `utf8` encoded *string* or a *Buffer*. The calculated checksum is returned as a **Buffer** of the 10-digit decimal string with padding.
+
+CommonJS require:
 ```js
-import { checksum } from "@iacobus/hbedf";
-
-// Sample data to calculate checksum
-const data = "Unmake the Wild Light";
-
-// Calculate checksum with 'checksum'
-const csum = checksum(data).toString('utf8');
-console.log(csum);
-
-```
-In this example, a checksum is calculated from data provided as a `utf8` encoded string. The calculated checksum is returned as a Buffer, which is encoded as a string before logging.
-```
-1859985276
+const { utils } = require("@iacobus/hbedf/utils");
 ```
 
-## Verify Checksum
-The **integrity of data** with a **32-bit decimal checksum** appended can be verified using the `verify` function, assuming the checksum of the data was calculated based on the process described in the *"Checksum Calculation"* section above or the [*"Checksum"*](https://gist.github.com/jacobhaap/e8305533628be06fc09754d41a17ee5b#checksum) section of the specification.
+## Conversion Utilities
+Two functions are included for the conversion between **Uint8Arrays** and **Hexadecimal Strings**. The `toHex` function accepts a *Uint8Array* and returns a hex-encoded *string*, and the `toBytes` function accepts a hex-encoded *string* and returns a *Uint8Array*.
+
+*Convert from a Uint8Array to a hex string:*
 ```ts
-verify(data:  string  |  Buffer):  boolean {};
+import { toHex } from "@iacobus/hbedf/utils";
+
+const bytes: Uint8Array = Uint8Array.from([11, 19, 13, 17]);
+const hex = toHex(bytes); // 0b130d11
 ```
-This requires a `data` parameter, which expects the data with a checksum appended, provided as a `utf8` encoded *string* or a *Buffer*. The resulting verification of the checksum/data integrity is returned as a **boolean** value of *true* when the verification is successful, or *false* when it fails.
+
+*Convert from a hex string to a Uint8Array:*
+```ts
+import { toBytes } from "@iacobus/hbedf/utils";
+
+const hex: string = "0b130d11";
+const bytes = toBytes(hex); // Uint8Array(4) [ 11, 19, 13, 17 ]
+```
+
+## Random Number Generation
+Pseudorandom numbers are generated from an **HMAC-SHA256**, based on the process described in the [*"Random Number Generation"*](https://gist.github.com/jacobhaap/e8305533628be06fc09754d41a17ee5b#random-number-generation) section of the specification. A floating-point number in the range **[0, 1)** derived via seeded random number generation can be obtained with the `hmacRng` function.
+
+The *hmacRng* function has three input parameters:
 ```js
-import { verify } from "@iacobus/hbedf";
-
-// Sample data with a checksum
-const data = "556E6D616B65207468652057696C64204C6967687431383539393835323736";
-
-// Create a Buffer from the data, as the string is not 'utf8' encoded
-const dataBuffer = Buffer.from(data, 'hex');
-
-// Verifies the checksum with 'verify'
-const verified = verify(dataBuffer);
-console.log(verified);
-
+function hmacRng(key, msg, c?) {};
 ```
-In this example, the data with a checksum is provided as a hexadecimal string, which is first converted to a Buffer as the string is not `utf8` encoded. Verification is then attempted of the `dataBuffer`, logging the result.
+Where:
+ - ***key*** is a cryptographic key.
+ - ***msg*** is a message for the *MAC*.
+ - ***c*** is an optional counter value for the *MAC*.
+
+The ***key*** parameter is expected as a *Uint8Array*, the ***msg*** parameter is expected as a *Uint8Array*, and the optional ***c*** parameter is expected as a *number*. The *hmacRng* function is synchronous, and returns a *number*.
+
+*Example use, without a counter:*
+```ts
+import { hmacRng } from "@iacobus/hbedf/utils";
+
+const key: Uint8Array = Uint8Array.from([1, 2, 3, 4]);
+const msg: Uint8Array = Uint8Array.from([5, 6, 7, 8]);
+
+const rng = hmacRng(key, msg); // 0.8780841176487075
 ```
-true
+
+## Array Shuffling
+Arrays are shuffled based on the implementation of the shuffle algorithm as described in the [*"Array Shuffling"*](https://gist.github.com/jacobhaap/e8305533628be06fc09754d41a17ee5b#array-shuffling) section of the specification. An array can be shuffled using the `fyShuffle` function.
+
+The *fyShuffle* function has three input parameters:
+```js
+async function fyShuffle(secret, input, opts) {};
+```
+Where:
+ - ***secret*** is the password used in the *scrypt* KDF.
+ - ***input*** is the array to be shuffled.
+ - ***opts*** are the options for the *scrypt* KDF.
+
+The ***secret*** parameter is expected as a *Uint8Array*, the ***input*** parameter is expected as an *array (string[])*, and the ***opts*** parameter is expected as an *ScryptOpts* object (*see [@noble/hashes](https://github.com/paulmillr/noble-hashes?tab=readme-ov-file#scrypt)*). The *fyShuffle* function is asynchronous, and returns a Promise that resolves to a *string*.
+
+*Example use:*
+```ts
+import { type ScryptOpts, fyShuffle } from "@iacobus/hbedf/utils";
+
+const secret: Uint8Array = Uint8Array.from([1, 2, 3, 4]);
+const input: string[] = "0123456789".split("");
+const opts: ScryptOpts = { N: 2 ** 8, r: 8, p: 1, dkLen: 32 };
+
+const shuffle = await fyShuffle(secret, input, opts); // 9740286315
+```
+
+## Checksums
+Checksums are calculated based on the process described in the [*"Checksum"*](https://gist.github.com/jacobhaap/e8305533628be06fc09754d41a17ee5b#checksum) section of the specification. A **16 byte checksum** can be calculated using the `checksum` function.
+
+The *checksum* function has one input parameter:
+```js
+function checksum(msg) {};
+```
+Where:
+ - ***msg*** is the message for which a checksum is calculated.
+
+The ***msg*** parameter is expected as a *Uint8Array*. The *checksum* function is synchronous, and returns the calculated checksum as a *Uint8Array*.
+
+*Example use:*
+```ts
+import { toBytes, toHex, checksum } from "@iacobus/hbedf/utils";
+
+const hexStr: string = "940d878d35ba771332fe98efd3bd51a2";
+const msg: Uint8Array = toBytes(hexStr);
+
+const csum = toHex(checksum(msg)); // 93bb7cdab5363686efa39a2f10566c70
+```
+
+---
+
+A message containing an appended checksum can be verified using the `verify` function, which has one input parameter:
+```js
+function verify(msg) {};
+```
+Where:
+ - ***msg*** is the message with an appended checksum to be verified.
+
+The ***msg*** parameter is expected as a Uint8Array. The *verify* function is synchronous, and returns the verification result as a *boolean* value.
+
+*Example use:*
+```ts
+import { toBytes, verify } from "@iacobus/hbedf/utils";
+
+const hexStr: string = "940d878d35ba771332fe98efd3bd51a293bb7cdab5363686efa39a2f10566c70";
+const msg: Uint8Array = toBytes(hexStr);
+
+const verified = verify(msg); // true
+```
+
+## Output Transformation
+Output transformation via hashing is applied based on the process described in the [*"Output Transformation"*](https://gist.github.com/jacobhaap/e8305533628be06fc09754d41a17ee5b#output-transformation) section of the specification. A message can be transformed using the `transform` function.
+
+The *transform* function has three input parameters:
+```js
+async function transform(a, msg, dkLen?)
+```
+Where:
+ - ***a*** is the name of a hashing algorithm.
+ - ***msg*** is the message to be transformed.
+ - ***dkLen*** is an optional output length when ***a*** is an *Extendable-output function (XOF)*.
+
+The ***a*** parameter is expected as an *Algorithm[^3]*, the ***msg*** parameter is expected as a *Uint8Array*, and the optional ***dkLen*** parameter is expected as a *number*. The *transform* function is asynchronous, and returns a Promise that resolves to a *Uint8Array*.
+
+[^3]: The *Algorithm* type is a type that allows names of hashing algorithms supported by [@noble/hashes](https://github.com/paulmillr/noble-hashes) to be provided as strings. Specifically, hashing algorithms from the following modules of the library are supported: *sha2*, *sha3*, *sha3-addons*, *ripemd160*, *blake1*, *blake2b*, *blake2s*, and *blake3*.
+
+*Example use:*
+```ts
+import { type Algorithm, transform } from "@iacobus/hbedf/utils";
+
+const a: Algorithm = "blake2b";
+const msg: Uint8Array = Uint8Array.from([0, 9, 8, 7]);
+const dkLen: number = 48;
+
+const tf = await transform(a, msg, dkLen);
+
+/*
+Uint8Array(48) [
+    7, 210,  46, 141,  78, 123,  45, 151,   0,
+   98, 157, 152,  86,  23, 194, 190, 103, 227,
+  170,  66, 192,  68, 212, 189, 226,  35, 194,
+  250, 103, 235,  53,  48, 230, 228, 239,  22,
+  163, 115, 218,  69, 116, 223,  53, 127, 215,
+   94,  28, 142
+]
+*/
 ```
