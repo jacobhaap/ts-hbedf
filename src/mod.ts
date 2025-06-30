@@ -1,88 +1,84 @@
 /**
- * @fileoverview Entry point for @iacobus/hbedf, constructs and exports the 'hbedf' function.
+ * @fileoverview Entry point for @iacobus/hbedf.
+ * Constructs and exports the hbedf async and sync functions, along with a re-export of the HbedfOpts type.
+ * @module
  * @author Jacob V. B. Haap <iacobus.xyz>
  * @license MIT
  */
 
-import type { ScryptOpts } from "npm:@noble/hashes@1.7.1/scrypt";
-import { toHex, toBytes } from "./utils/hex.ts";
-import { fyShuffle } from "./utils/shuffle.ts";
-import { checksum, verify } from "./utils/checksum.ts";
-import { type Algorithm, transform } from "./utils/transform.ts";
+import type { CHash } from "npm:@noble/hashes@1.8.0/utils";
+import { defaultSchema } from "npm:@iacobus/hd@1.1.1/path";
+import { expand, extract, type HbedfOpts, key, shuffleAsync, shuffleSync } from "./hbedf.ts";
 
-const encoder = new TextEncoder();
+/** Re-export of HBEDF options. */
+export type { HbedfOpts } from "./hbedf.ts";
 
-/** Type for seed options. */
-export type SeedOpts = {
-    a: Algorithm;
-    dkLen?: number;
-    N: number;
-    r: number;
-    p: number;
-    maxmem?: number;
+/**
+ * hbedf generates a derived seed from initial biographic material (ibm) and a secret, from a given hash,
+ * ibm array, secret, and options.
+ *
+ * From the options, path and schema are a derivation path and schema. A default schema is used when schema
+ * is undefined. c is the HMAC iterations count for strengthening. mem is the target memory cost for scrypt.
+ * dsLen is the output byte length of the derived seed.
+ * @example
+ * const opts: HbedfOpts = { path: "m/42/0/1/0", c: 10000, mem: 128, dsLen: 64 };
+ * const ds = await hbedf(ibm, secret, opts);
+ */
+export async function hbedf(
+	h: CHash,
+	ibm: Uint8Array[],
+	secret: Uint8Array,
+	opts: HbedfOpts
+): Promise<Uint8Array> {
+	let schema: string;
+	if (opts.schema) {
+		schema = opts.schema; // Use schema from opts when defined
+	} else {
+		schema = defaultSchema; // Default schema when undefined
+	}
+	const hdKey = key(h, secret, schema, opts.path); // Derive HD key
+	const { sbm, N } = extract(h, ibm, hdKey, opts.c, opts.mem); // Extract sbm and N
+	const pbm = await shuffleAsync(h, sbm, hdKey, N); // Produce pbm from the shuffle phase
+	let dsLen: number;
+	if (opts.dsLen) {
+		dsLen = opts.dsLen; // Use dsLen from opts when defined
+	} else {
+		dsLen = 32; // Default length when undefined
+	}
+	return expand(h, pbm, hdKey, dsLen); // Return the result of the expand phase
 }
 
 /**
- * Derives a pseudorandom seed from a passphrase combined with human identity and secrets.
+ * hbedfSync generates a derived seed from initial biographic material (ibm) and a secret, from a given hash,
+ * ibm array, secret, and options.
+ *
+ * From the options, path and schema are a derivation path and schema. A default schema is used when schema
+ * is undefined. c is the HMAC iterations count for strengthening. mem is the target memory cost for scrypt.
+ * dsLen is the output byte length of the derived seed.
  * @example
- * const passphrase: string = "123456";
- * const identity: string[] = ["MUSTERMANN", "ERIKA", "L01X00T47", "12081983"];
- * const opts: SeedOpts = { a: "blake2s", N: 2 ** 8, r: 8, p: 1, dkLen: 16 };
- * const ps = await hbedf(passphrase, identity, null, opts); // Uint8Array(32) [ 102, 189, 153, 140... ]
+ * const opts: HbedfOpts = { path: "m/42/0/1/0", c: 10000, mem: 128, dsLen: 64 };
+ * const ds = hbedfSync(ibm, secret, opts);
  */
-export async function hbedf(passphrase: string | Uint8Array, identity: string[], secret: string | null, opts: SeedOpts): Promise<Uint8Array> {
-    let pass: Uint8Array; // Initialize the 'pass' let
-    if (typeof passphrase === "string") pass = encoder.encode(passphrase); // Uint8Array from 'passphrase' when it is a UTF-8 encoded string
-    else pass = passphrase; // Directly use 'passphrase' when it is a Uint8Array
-
-    // Extract options from 'opts' for output transformation and scrypt key derivation
-    const a = opts.a; // 'algorithm' for output transformation from 'opts.a'
-    const dkLen = opts.dkLen; // 'dkLen' for output transformation from 'opts.dkLen'
-    const scryptOpts: ScryptOpts = {
-        N: opts.N, // 'N' for scrypt from 'opts.N'
-        r: opts.r, // 'r' for scrypt from 'opts.r'
-        p: opts.p, // 'p' for scrypt from 'opts.p'
-        dkLen: 32, // Use a 'dkLen' of '32' for scrypt
-        ...(opts.maxmem !== undefined && { maxmem: opts.maxmem }) // 'maxmem' for scrypt from 'opts.maxmem'
-    }
-
-    let input: string[]; // Initialize the 'input' let
-    if (secret) input = [...identity, secret]; // Insert the 'secret' (when available) after 'identity'
-    else input = [...identity]; // Create 'input' directly from 'identity' when no 'secret' is provided
-
-    // First shuffle iteration
-    // Uses the 'passphrase' as the secret, scrypt key derived based on 'scryptOpts'
-    // Shuffles all elements in the 'input' array of Identity + optional Secret
-    const iter1 = await fyShuffle(pass, input, scryptOpts);
-
-    // Checksum of first shuffle iteration
-    // Calculates a 16-byte checksum, using 'iter1'
-    const csum1 = toHex(checksum(encoder.encode(iter1)));
-
-    // Split all characters in 'iter1' string into an array
-    const chars = iter1.split('');
-
-    // Second shuffle iteration
-    // Uses the 'csum1' as the secret, scrypt key derived based on 'scryptOpts'
-    // Shuffles all elements in the 'chars' array of characters from 'iter1' string
-    const iter2 = await fyShuffle(encoder.encode(csum1), chars, scryptOpts);
-
-    // Apply output transformation
-    // Hash 'iter2' with hashing algorithm 'a'
-    // Use 'dkLen' when defined for 'a' if 'a' is a XOF
-    const tf = await transform(a, encoder.encode(iter2), dkLen);
-
-    // Checksum of the output transformation
-    // Calculates a 16-byte checksum, using 'tf'
-    const csum = toHex(checksum(tf));
-
-    // Construct the seed 'ps' from 'tf' and 'csum'
-    let ps: string | Uint8Array; // Initialize the 'ps' let
-    ps = toHex(tf) + csum; // Append 'csum' to hex string of 'tf'
-    ps = toBytes(ps); // Convert hex string of 'tf' + 'csum' to Uint8Array
-
-    // Verify and return 'ps'
-    const valid = verify(ps); // Check 'ps' integrity by verifying checksum
-    if (valid) return ps; // Return the 'ps' if valid
-    else throw new Error(`Unable to verify seed integrity.`); // Throw an error if invalid
+export function hbedfSync(
+	h: CHash,
+	ibm: Uint8Array[],
+	secret: Uint8Array,
+	opts: HbedfOpts
+): Uint8Array {
+	let schema: string;
+	if (opts.schema) {
+		schema = opts.schema; // Use schema from opts when defined
+	} else {
+		schema = defaultSchema; // Default schema when undefined
+	}
+	const hdKey = key(h, secret, schema, opts.path); // Derive HD key
+	const { sbm, N } = extract(h, ibm, hdKey, opts.c, opts.mem); // Extract sbm and N
+	const pbm = shuffleSync(h, sbm, hdKey, N); // Produce pbm from the shuffle phase
+	let dsLen: number;
+	if (opts.dsLen) {
+		dsLen = opts.dsLen; // Use dsLen from opts when defined
+	} else {
+		dsLen = 32; // Default length when undefined
+	}
+	return expand(h, pbm, hdKey, dsLen); // Return the result of the expand phase
 }
